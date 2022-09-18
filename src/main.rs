@@ -13,19 +13,22 @@ use daqmx::types::*;
 
 use std::sync;
 
+use std::sync::mpsc::{self, Receiver, Sender};
+
 fn main() {
     let options = eframe::NativeOptions::default();
 
-    thread::spawn(|| analogue_input());
+    let (tx, rx) = mpsc::channel();
 
-    eframe::run_native(
-        "DAQmx test",
-        options,
-        Box::new(|_cc| Box::new(App::default())),
-    );
+    thread::spawn(move || analogue_input(tx));
+
+    let mut app = App::default();
+    app.receiver = Some(rx);
+
+    eframe::run_native("DAQmx test", options, Box::new(|_cc| Box::new(app)));
 }
 
-fn analogue_input() {
+fn analogue_input(tx: Sender<f32>) {
     let mut task = Task::new("buffered").unwrap();
     let ch1 = VoltageChannelBuilder::new("Sim-PCIe-6320/ai0").unwrap();
     task.create_channel(ch1).unwrap();
@@ -42,7 +45,7 @@ fn analogue_input() {
 
     task.start().unwrap();
 
-    for i in 1..100 {
+    loop {
         task.read(
             Timeout::Seconds(1.0),
             DataFillMode::GroupByChannel,
@@ -51,22 +54,31 @@ fn analogue_input() {
         )
         .unwrap();
 
+        let mut avg = 0.0;
+
         for sample in buffer {
-            println!("{}", sample);
+            avg = avg + sample;
         }
+        avg = avg / 100.0;
+
+        tx.send(avg as f32);
     }
 
     drop(task);
 }
 
 struct App {
+    receiver: Option<Receiver<f32>>,
     lastNow: Instant,
+    avg: f32,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
+            receiver: None,
             lastNow: Instant::now(),
+            avg: 0.0,
         }
     }
 }
@@ -78,7 +90,14 @@ impl eframe::App for App {
         self.lastNow = now;
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("DAQmx test");
+            let avg = self.receiver.as_ref().unwrap().try_recv();
+            match avg {
+                Ok(data) => self.avg = data,
+                _ => (),
+            };
+
+            ui.heading(format!("Average: {:.2}", self.avg));
+
             strings_ui(ui);
         });
     }
