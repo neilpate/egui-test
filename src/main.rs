@@ -63,13 +63,11 @@ fn analogue_input(tx: Sender<f32>) {
 
         tx.send(avg as f32);
     }
-
-    drop(task);
 }
 
 struct App {
     receiver: Option<Receiver<f32>>,
-    lastNow: Instant,
+    last_now: Instant,
     avg: f32,
 }
 
@@ -77,7 +75,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             receiver: None,
-            lastNow: Instant::now(),
+            last_now: Instant::now(),
             avg: 0.0,
         }
     }
@@ -86,8 +84,8 @@ impl Default for App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let now = Instant::now();
-        let deltaTime = (now - self.lastNow).as_secs_f32();
-        self.lastNow = now;
+        let deltaTime = (now - self.last_now).as_secs_f32();
+        self.last_now = now;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let avg = self.receiver.as_ref().unwrap().try_recv();
